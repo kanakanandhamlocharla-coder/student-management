@@ -546,6 +546,11 @@ function playPcmAudio(arrayBuffer) {
     nextPlaybackTime = startTime + audioBuffer.duration;
 }
 
+function updateAgentButton(button, icon, label) {
+    button.querySelector(".button-icon").textContent = icon;
+    button.querySelector(".button-label").textContent = label;
+}
+
 agentStartStopButton.addEventListener("click", async () => {
 
     if (!isAgentRunning) {
@@ -630,7 +635,7 @@ agentStartStopButton.addEventListener("click", async () => {
             silentGainNode.connect(audioContext.destination);
 
             isAgentRunning = true;
-            agentStartStopButton.textContent = "Stop";
+            updateAgentButton(agentStartStopButton, "■", "Stop");
             agentMuteButton.disabled = false;
             agentStartStopButton.classList.add("active");
         }
@@ -673,8 +678,8 @@ agentStartStopButton.addEventListener("click", async () => {
 
         agentStatus.textContent = "Ready";
         agentActivity.textContent = "Session stopped.";
-        agentStartStopButton.textContent = "Start";
-        agentMuteButton.textContent = "Mute";
+        updateAgentButton(agentStartStopButton, "▶", "Start");
+        updateAgentButton(agentMuteButton, "🎙", "Mute");
         agentMuteButton.disabled = true;
         agentStartStopButton.classList.remove("active");
         agentMuteButton.classList.remove("muted");
@@ -689,7 +694,11 @@ agentMuteButton.addEventListener("click", () => {
         track.enabled = !isAgentMuted
     })
 
-    agentMuteButton.textContent = isAgentMuted ? "Unmute" : "Mute"
+    if (isAgentMuted) {
+        updateAgentButton(agentMuteButton, "🔇", "Unmute");
+    } else {
+        updateAgentButton(agentMuteButton, "🎙", "Mute");
+    }
     agentMuteButton.classList.toggle("muted", isAgentMuted);
 })
 
