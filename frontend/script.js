@@ -15,8 +15,12 @@ let isAgentMuted = false
 let socket;
 let micStream;
 let audioContext;
+let playbackContext;
+let nextPlaybackTime = 0;
+let activeAudioSources = [];
 let microphoneSource;
-let audioWorkletNode
+let audioWorkletNode;
+let silentGainNode;
 let audioPacketCount = 0;
 
 
@@ -25,6 +29,8 @@ const cancelEditButton = document.getElementById("cancelEditButton")
 //Live Agent Controls
 const agentStartStopButton = document.getElementById("agentStartStopButton")
 const agentMuteButton = document.getElementById("agentMuteButton")
+const agentStatus = document.getElementById("agentStatus")
+const agentActivity = document.getElementById("agentActivity")
 
 //Listen for form Submission
 studentForm.addEventListener("submit", async function(event) {
@@ -495,79 +501,181 @@ async function loadCourseDistribution(){
 
 
 
+function stopAudioPlayback() {
+    for (const source of activeAudioSources) {
+        try {
+            source.stop();
+        } catch (e) {
+            // Ignore if source already finished
+        }
+        source.disconnect();
+    }
+    activeAudioSources = [];
+    nextPlaybackTime = playbackContext ? playbackContext.currentTime : 0;
+}
+
+function playPcmAudio(arrayBuffer) {
+    if (!playbackContext) {
+        playbackContext = new AudioContext({ sampleRate: 24000 });
+        nextPlaybackTime = playbackContext.currentTime;
+    }
+    if (playbackContext.state === "suspended") {
+        playbackContext.resume();
+    }
+
+    const int16 = new Int16Array(arrayBuffer);
+    const float32 = new Float32Array(int16.length);
+    for (let i = 0; i < int16.length; i++) {
+        float32[i] = int16[i] / 32768;
+    }
+
+    const audioBuffer = playbackContext.createBuffer(1, float32.length, 24000);
+    audioBuffer.getChannelData(0).set(float32);
+
+    const source = playbackContext.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(playbackContext.destination);
+
+    source.onended = () => {
+        activeAudioSources = activeAudioSources.filter(s => s !== source);
+    };
+    activeAudioSources.push(source);
+
+    const startTime = Math.max(playbackContext.currentTime, nextPlaybackTime);
+    source.start(startTime);
+    nextPlaybackTime = startTime + audioBuffer.duration;
+}
+
 agentStartStopButton.addEventListener("click", async () => {
 
     if (!isAgentRunning) {
 
         try {
-            socket = new WebSocket("ws://127.0.0.1:8000/ws")
+            agentStatus.textContent = "Connecting...";
+            agentActivity.textContent = "Connecting to NOVA...";
+            audioPacketCount = 0;
+
+            const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
+            const wsHost = window.location.host || "127.0.0.1:8000";
+            socket = new WebSocket(`${wsProtocol}://${wsHost}/ws`);
 
             socket.onopen = () => {
-                console.log("WebSocket Connected")
-            }
+                console.log("WebSocket Connected");
+            };
 
             socket.onmessage = async (event) => {
                 if (typeof event.data === "string") {
                     console.log("Message from FastAPI:", event.data);
+                    if (event.data === "connected") {
+                        agentStatus.textContent = "Listening";
+                        agentActivity.textContent = "Connected! Speak into your microphone.";
+                    } else if (event.data === "interrupted") {
+                        stopAudioPlayback();
+                        agentStatus.textContent = "Listening";
+                        agentActivity.textContent = "Interrupted — listening...";
+                    }
+                    else if (event.data === "error") {
+                        stopAudioPlayback()
+                        agentStatus.textContent = "Error"
+                        agentActivity.textContent = "Sorry, something went wrong. Please try again."
+                    }
                     return;
                 }
 
                 const audioData = await event.data.arrayBuffer();
-
                 console.log("Gemini audio received:", audioData.byteLength);
+                agentActivity.textContent = "NOVA is speaking...";
+                playPcmAudio(audioData);
+            };
 
-            }
-
-            socket.onerror = () => {
-                console.error("WebSocket Disconnected")
-            }
+            socket.onerror = (error) => {
+                console.error("WebSocket Error:", error);
+                agentStatus.textContent = "Error";
+                agentActivity.textContent = "WebSocket connection error.";
+            };
 
             socket.onclose = (event) => {
                 console.log("WebSocket closed:", event.code, event.reason);
+                if (isAgentRunning) {
+                    agentStatus.textContent = "Disconnected";
+                }
             };
 
-            micStream = await navigator.mediaDevices.getUserMedia({audio: true})
-            audioContext = new AudioContext({sampleRate:16000})
+            micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            audioContext = new AudioContext({ sampleRate: 16000 });
+            await audioContext.resume();
             console.log("Audio Sample Rate:", audioContext.sampleRate);
-            await audioContext.audioWorklet.addModule("/static/audio_processor.js")
-            microphoneSource = audioContext.createMediaStreamSource(micStream)
-            audioWorkletNode = new AudioWorkletNode(audioContext, "audio-processor")
+
+            await audioContext.audioWorklet.addModule("/static/audio_processor.js");
+            microphoneSource = audioContext.createMediaStreamSource(micStream);
+            audioWorkletNode = new AudioWorkletNode(audioContext, "audio-processor");
+
+            // Connect through a zero-gain node to destination so the browser always pulls process()
+            silentGainNode = audioContext.createGain();
+            silentGainNode.gain.value = 0;
 
             audioWorkletNode.port.onmessage = (event) => {
-                const pcmSamples = event.data
-                if (socket.readyState === WebSocket.OPEN) {
-                    socket.send(pcmSamples.buffer)
+                const pcmSamples = event.data;
+                if (socket && socket.readyState === WebSocket.OPEN) {
+                    socket.send(pcmSamples.buffer);
+                    audioPacketCount += 1;
+                    if (audioPacketCount === 1 || audioPacketCount % 50 === 0) {
+                        console.log("Sent audio packets:", audioPacketCount, pcmSamples.byteLength, "bytes");
+                    }
                 }
+            };
 
-            }
+            microphoneSource.connect(audioWorkletNode);
+            audioWorkletNode.connect(silentGainNode);
+            silentGainNode.connect(audioContext.destination);
 
-
-
-            microphoneSource.connect(audioWorkletNode)
-
-            isAgentRunning = true
-            agentStartStopButton.textContent = "Stop"
-            agentMuteButton.disabled = false
+            isAgentRunning = true;
+            agentStartStopButton.textContent = "Stop";
+            agentMuteButton.disabled = false;
             agentStartStopButton.classList.add("active");
         }
         catch (error) {
-            console.error("Microphone error:", error)
+            console.error("Microphone error:", error);
+            agentStatus.textContent = "Error";
+            agentActivity.textContent = `Failed to start: ${error.message}`;
         }
     }
     else {
 
-        micStream.getTracks().forEach(track => track.stop())
-        microphoneSource.disconnect()
-        audioWorkletNode.disconnect()
+        if (micStream) {
+            micStream.getTracks().forEach(track => track.stop());
+        }
+        if (microphoneSource) {
+            microphoneSource.disconnect();
+        }
+        if (audioWorkletNode) {
+            audioWorkletNode.disconnect();
+        }
+        if (silentGainNode) {
+            silentGainNode.disconnect();
+        }
+        if (audioContext) {
+            await audioContext.close();
+            audioContext = null;
+        }
+        if (playbackContext) {
+            stopAudioPlayback();
+            await playbackContext.close();
+            playbackContext = null;
+            nextPlaybackTime = 0;
+        }
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.close();
+        }
 
-        await audioContext.close()
+        isAgentRunning = false;
+        isAgentMuted = false;
 
-        isAgentRunning = false
-        isAgentMuted = false
-
-        agentStartStopButton.textContent = "Start"
-        agentMuteButton.textContent = "Mute"
-        agentMuteButton.disabled = true
+        agentStatus.textContent = "Ready";
+        agentActivity.textContent = "Session stopped.";
+        agentStartStopButton.textContent = "Start";
+        agentMuteButton.textContent = "Mute";
+        agentMuteButton.disabled = true;
         agentStartStopButton.classList.remove("active");
         agentMuteButton.classList.remove("muted");
     }
@@ -585,6 +693,19 @@ agentMuteButton.addEventListener("click", () => {
     agentMuteButton.classList.toggle("muted", isAgentMuted);
 })
 
+const aiToggle = document.getElementById("aiToggle")
+aiToggle.addEventListener("click", () => {
+
+    const isEnabled = aiToggle.classList.toggle("on")
+
+    aiToggle.setAttribute("aria-pressed", isEnabled)
+
+    // Enable or disable the AI Agent Start button
+    if (!isEnabled && isAgentRunning) {
+        agentStartStopButton.click()
+    }
+    agentStartStopButton.disabled = !isEnabled
+})
 
 
 

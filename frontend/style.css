@@ -532,3 +532,128 @@ tbody tr:hover {
 .agent-controls button.muted {
     background: #dc2626;
 }
+
+/* Settings */
+
+.settings-card {
+    background: white;
+    margin-top: 25px;
+    padding: 25px;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.settings-info h3 {
+    color: #243b55;
+    margin-bottom: 8px;
+}
+
+.settings-info p {
+    color: #777;
+    font-size: 14px;
+}
+
+/* Toggle Switch */
+
+.toggle-switch {
+    width: 55px;
+    height: 28px;
+    border-radius: 20px;
+    background: #9ca3af;
+    padding: 3px;
+    border: none;
+    position: relative;
+    transition: background 0.3s;
+}
+
+.toggle-circle {
+    display: block;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: white;
+    position: absolute;
+    left: 3px;
+    top: 3px;
+    transition: transform 0.3s;
+}
+
+.toggle-switch.on {
+    background: #16a34a;
+}
+
+.toggle-switch.on .toggle-circle {
+    transform: translateX(27px);
+}
+
+/* Dark Theme */
+
+body.dark-theme {
+    background: #111827;
+    color: #e5e7eb;
+}
+
+body.dark-theme .sidebar,
+body.dark-theme .main-content {
+    background: #1f2937;
+    color: #e5e7eb;
+}
+
+body.dark-theme .settings-card,
+body.dark-theme .stat-card,
+body.dark-theme .dashboard-card,
+body.dark-theme .table-container,
+body.dark-theme .form-container {
+    background: #273449;
+    color: #e5e7eb;
+}
+
+body.dark-theme h1,
+body.dark-theme h2,
+body.dark-theme h3,
+body.dark-theme p,
+body.dark-theme label {
+    color: #e5e7eb;
+}
+
+body.dark-theme input,
+body.dark-theme select,
+body.dark-theme textarea {
+    background: #374151;
+    color: #f9fafb;
+    border-color: #4b5563;
+}
+
+body.dark-theme table {
+    color: #e5e7eb;
+}
+
+body.dark-theme th {
+    background: #374151;
+    color: #f9fafb;
+}
+
+body.dark-theme td {
+    border-color: #4b5563;
+}
+
+body.dark-theme tr:nth-child(even) {
+    background: #1f2937;
+}
+
+body.dark-theme .nav-item {
+    color: #d1d5db;
+}
+
+body.dark-theme .nav-item.active {
+    background: #374151;
+    color: white;
+}
+
+#student-hub-text {
+    color: white;
+}

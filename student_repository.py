@@ -102,6 +102,59 @@ def update_student_in_database(student_id, student):
         connection.close()
 
 
+def update_student_fields_in_database(student_id, updates):
+
+    allowed_fields = {
+        "roll_number",
+        "name",
+        "age",
+        "course",
+        "marks"
+    }
+
+    if not updates:
+        raise ValueError("No fields provided for update.")
+
+    if not all(field in allowed_fields for field in updates):
+        raise ValueError("Invalid field provided for update.")
+
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    try:
+        cursor.execute(
+            "SELECT student_id FROM students WHERE student_id = %s",
+            (student_id,)
+        )
+        existing_student = cursor.fetchone()
+
+        if existing_student is None:
+            return False
+
+        set_clause = ", ".join(f"{field} = %s" for field in updates)
+
+        query = f"""
+        UPDATE students
+        SET {set_clause}
+        WHERE student_id = %s
+        """
+
+        values = tuple(updates.values()) + (student_id,)
+
+        cursor.execute(query, values)
+        connection.commit()
+        return True
+
+    # Checks for the duplicate roll numbers.
+    except IntegrityError:
+        connection.rollback()
+        raise
+
+    finally:
+        cursor.close()
+        connection.close()
+
+
 
 def delete_student_from_database(student_id):
     connection = get_connection()
